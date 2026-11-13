@@ -63,6 +63,10 @@
 
     <!-- Behaviour Prefs -->
 
+    <string name="pref_behaviour_haptics_key" translatable="false">pref_behaviour_haptics</string>
+    <string name="pref_behaviour_haptics_title">Haptic feedback</string>
+    <string name="pref_behaviour_haptics_summary">Allow vibration feedback when interacting with RedReader</string>
+
     <string name="pref_behaviour_notifications_key" translatable="false">pref_behaviour_notifications</string>
     <string name="pref_behaviour_notifications_title">Notifications</string>
 
