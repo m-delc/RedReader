@@ -23,6 +23,9 @@ import android.content.pm.PackageManager;
 import android.graphics.Color;
 import android.os.Build;
 import android.os.Bundle;
+import android.view.View;
+import android.view.ViewGroup;
+import android.view.ViewTreeObserver;
 import android.view.Window;
 import android.view.WindowManager;
 
@@ -42,12 +45,19 @@ import org.quantumbadger.redreader.common.SharedPrefsWrapper;
 import org.quantumbadger.redreader.common.TorCommon;
 
 import java.util.HashMap;
+import java.util.Map;
+import java.util.WeakHashMap;
 import java.util.concurrent.atomic.AtomicInteger;
 
 public abstract class BaseActivity extends AppCompatActivity
 		implements SharedPrefsWrapper.OnSharedPreferenceChangeListener {
 
 	private SharedPrefsWrapper mSharedPreferences;
+
+	// Remember each view's original state so enabling haptics restores it.
+	private final Map<View, Boolean> mOriginalHapticStates = new WeakHashMap<>();
+	private final ViewTreeObserver.OnGlobalLayoutListener mHapticsLayoutListener
+			= this::applyHapticPreference;
 
 	private static boolean closingAll = false;
 
@@ -123,6 +133,8 @@ public abstract class BaseActivity extends AppCompatActivity
 		}
 
 		mSharedPreferences.registerOnSharedPreferenceChangeListener(this);
+		getWindow().getDecorView().getViewTreeObserver()
+				.addOnGlobalLayoutListener(mHapticsLayoutListener);
 		setOrientationFromPrefs();
 		closeIfNecessary();
 
@@ -245,13 +257,54 @@ public abstract class BaseActivity extends AppCompatActivity
 		invalidateBackPressedCallback();
 		closeIfNecessary();
 		TorCommon.updateTorStatus();
+		applyHapticPreference();
 	}
 
 
 	@Override
 	protected void onDestroy() {
 		super.onDestroy();
+		getWindow().getDecorView().getViewTreeObserver()
+				.removeOnGlobalLayoutListener(mHapticsLayoutListener);
+		restoreHapticStates();
 		mSharedPreferences.unregisterOnSharedPreferenceChangeListener(this);
+	}
+
+	/** Disable Android View haptic feedback throughout this activity, including
+	 * views added after the initial layout. This does not intercept direct calls
+	 * to Vibrator by third-party libraries or the operating system. */
+	private void applyHapticPreference() {
+		if (mSharedPreferences == null) {
+			return;
+		}
+		if (mSharedPreferences.getBoolean(
+				getString(R.string.pref_behaviour_haptics_key), false)) {
+			restoreHapticStates();
+		} else {
+			disableViewHaptics(getWindow().getDecorView());
+		}
+	}
+
+	private void disableViewHaptics(final View view) {
+		if (!mOriginalHapticStates.containsKey(view)) {
+			mOriginalHapticStates.put(view, view.isHapticFeedbackEnabled());
+		}
+		if (view.isHapticFeedbackEnabled()) {
+			view.setHapticFeedbackEnabled(false);
+		}
+		if (view instanceof ViewGroup) {
+			final ViewGroup group = (ViewGroup)view;
+			for (int i = 0; i < group.getChildCount(); i++) {
+				disableViewHaptics(group.getChildAt(i));
+			}
+		}
+	}
+
+	private void restoreHapticStates() {
+		for (final Map.Entry<View, Boolean> entry : mOriginalHapticStates.entrySet()) {
+			entry.getKey().setHapticFeedbackEnabled(entry.getValue());
+		}
+		mOriginalHapticStates.clear();
 	}
 
 	private void closeIfNecessary() {
@@ -371,6 +424,10 @@ public abstract class BaseActivity extends AppCompatActivity
 			@NonNull final String key) {
 
 		onSharedPreferenceChangedInner(prefs, key);
+
+		if (key.equals(getString(R.string.pref_behaviour_haptics_key))) {
+			applyHapticPreference();
+		}
 
 		if (key.equals(getString(R.string.pref_behaviour_screenorientation_key))) {
 			setOrientationFromPrefs();
